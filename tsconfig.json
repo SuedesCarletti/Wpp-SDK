@@ -1,0 +1,30 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+// All rights reserved.
+//
+// This source code is licensed under the license found in the
+// LICENSE file in the root directory of this source tree.
+//
+
+{
+	"compilerOptions": {
+		"baseUrl": "./",
+		"outDir": "build",
+		"allowJs": true,
+		"target": "ES2021",
+		"module": "CommonJS",
+		"checkJs": true,
+		"strict": true,
+		"types": ["node", "jest"],
+		"declaration": true,
+		"incremental": true,
+		"noImplicitReturns": true,
+		"noFallthroughCasesInSwitch": true,
+		"esModuleInterop": true,
+		"moduleResolution": "node",
+		"isolatedModules": true,
+		"skipLibCheck": false,
+		"resolveJsonModule": true,
+		"forceConsistentCasingInFileNames": true
+	},
+	"include": ["src/**/*"]
+}
