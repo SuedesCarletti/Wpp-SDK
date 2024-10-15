@@ -22,7 +22,7 @@
 	"scripts": {
 		"start": "ts-node -r tsconfig-paths/register ./src/WhatsApp.ts",
 		"prebuild": "run-s create-version-file",
-		"build": "rimraf ./build && tsc -p tsconfig.json && ./node_modules/.bin/babel build --out-dir build && rimraf ./build/__tests__/",
+		"build": "rimraf ./build && tsc -p tsconfig.json && npx babel build --out-dir build && rimraf ./build/__tests__/",
 		"check-changelog": "node ./scripts/check_changelog.mjs",
 		"check-copyright-headers": "node ./scripts/check_copyright_headers.mjs",
 		"create-version-file": "node ./scripts/create_version_file.mjs",
@@ -76,6 +76,7 @@
 		"@typescript-eslint/parser": "~5.57.1",
 		"babel-jest": "^29.5.0",
 		"babel-plugin-add-module-exports": "^1.0.4",
+		"cross-env": "^7.0.3",
 		"cspell": "^6.31.1",
 		"dotenv": "^16.0.3",
 		"eslint": "~8.37.0",
