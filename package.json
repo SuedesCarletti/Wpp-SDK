@@ -59,7 +59,8 @@
 	},
 	"homepage": "https://whatsapp.github.io/WhatsApp-Nodejs-SDK/",
 	"dependencies": {
-		"@types/node": "~18.11.18"
+		"@types/node": "~18.11.18",
+		"whatsapp": "^0.0.5-Alpha"
 	},
 	"devDependencies": {
 		"@babel/cli": "^7.21.0",
