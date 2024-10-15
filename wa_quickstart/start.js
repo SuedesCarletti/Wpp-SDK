@@ -1,10 +1,15 @@
+import dotenv from 'dotenv';
+
+// Carregar variáveis de ambiente do arquivo .env
+dotenv.config();
+
 import WhatsApp from 'whatsapp';
 
 // Your test sender phone number
-const wa = new WhatsApp(554432189638);
+const wa = new WhatsApp(process.env.WA_PHONE_NUMBER_ID);
 
 // Enter the recipient phone number
-const recipient_number = 5544984146379;
+const recipient_number = '5544984146379';
 
 async function send_message() {
     try {

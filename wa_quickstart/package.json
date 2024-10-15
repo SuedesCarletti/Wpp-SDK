@@ -1,14 +1,14 @@
 {
   "name": "wa_quickstart",
   "version": "1.0.0",
-  "main": "index.js",
+  "description": "",
+  "main": "start.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node start.js"
   },
-  "keywords": [],
+  "type": "module",
   "author": "",
   "license": "ISC",
-  "description": "",
   "dependencies": {
     "whatsapp": "^0.0.5-Alpha"
   }
