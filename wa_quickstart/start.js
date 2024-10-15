@@ -1,24 +1,35 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
+console.log('WA_PHONE_NUMBER_ID:', process.env.WA_PHONE_NUMBER_ID);
+console.log('CLOUD_API_ACCESS_TOKEN:', process.env.CLOUD_API_ACCESS_TOKEN);
+console.log('CLOUD_API_VERSION:', process.env.CLOUD_API_VERSION);
+
 import WhatsApp from 'whatsapp';
 
-// Your test sender phone number
-const wa = new WhatsApp( '554432189638' );
+const wa = new WhatsApp({
+  id: process.env.WA_PHONE_NUMBER_ID,
+  token: process.env.CLOUD_API_ACCESS_TOKEN,
+  version: process.env.CLOUD_API_VERSION
+});
 
-// Enter the recipient phone number
-const recipient_number = '5544984146379' ;
+const recipient_number = '5544984146379';
 
-async function send_message()
-{
-    try{
-        const sent_text_message = wa.messages.text( { "body" : "Hello world" }, recipient_number );
-
-        await sent_text_message.then( ( res ) =>
-        {
-            console.log( res.rawResponse() );
-        } );
-    }
-    catch( e )
-    {
-        console.log( JSON.stringify( e ) );
+async function send_message() {
+    try {
+        console.log('Enviando mensagem...');
+        const sent_text_message = await wa.messages.template({
+            to: recipient_number,
+            template: {
+                name: 'hello_world',
+                language: {
+                    code: 'en_US'
+                }
+            }
+        });
+        console.log('Mensagem enviada:', sent_text_message.rawResponse());
+    } catch (e) {
+        console.log('Erro ao enviar mensagem:', JSON.stringify(e));
     }
 }
 
