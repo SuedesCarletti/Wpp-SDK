@@ -22,7 +22,7 @@
 		"esModuleInterop": true,
 		"moduleResolution": "node",
 		"isolatedModules": true,
-		"skipLibCheck": false,
+		"skipLibCheck": true,
 		"resolveJsonModule": true,
 		"forceConsistentCasingInFileNames": true
 	},
