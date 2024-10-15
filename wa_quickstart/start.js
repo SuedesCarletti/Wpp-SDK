@@ -1,7 +1,9 @@
 import dotenv from 'dotenv';
-
-// Carregar variáveis de ambiente do arquivo .env
 dotenv.config();
+
+console.log('WA_PHONE_NUMBER_ID:', process.env.WA_PHONE_NUMBER_ID);
+console.log('CLOUD_API_ACCESS_TOKEN:', process.env.CLOUD_API_ACCESS_TOKEN);
+console.log('CLOUD_API_VERSION:', process.env.CLOUD_API_VERSION);
 
 import WhatsApp from 'whatsapp';
 
@@ -13,11 +15,8 @@ const recipient_number = '5544984146379';
 
 async function send_message() {
     try {
-        const sent_text_message = wa.messages.text({ "body": "Hello world" }, recipient_number);
-
-        await sent_text_message.then((res) => {
-            console.log(res.rawResponse());
-        });
+        const sent_text_message = await wa.messages.text({ "body": "Hello world" }, recipient_number);
+        console.log(sent_text_message.rawResponse());
     } catch (e) {
         console.log(JSON.stringify(e));
     }
