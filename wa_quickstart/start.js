@@ -1,36 +1,56 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-console.log('WA_PHONE_NUMBER_ID:', process.env.WA_PHONE_NUMBER_ID);
-console.log('CLOUD_API_ACCESS_TOKEN:', process.env.CLOUD_API_ACCESS_TOKEN);
-console.log('CLOUD_API_VERSION:', process.env.CLOUD_API_VERSION);
+import axios from 'axios';
 
-import WhatsApp from 'whatsapp';
-
-const wa = new WhatsApp({
-  id: process.env.WA_PHONE_NUMBER_ID,
-  token: process.env.CLOUD_API_ACCESS_TOKEN,
-  version: process.env.CLOUD_API_VERSION
+const recipient_numbers = ['5544984146379', '5543984554965']; // Substitua com outros números se necessário
+const messageData = (number) => ({
+  messaging_product: 'whatsapp',
+  to: number,
+  type: 'template',
+  template: {
+    name: 'aviso_entrega',
+    language: { code: 'pt_BR' },
+    components: [
+      {
+        type: 'header',
+        parameters: [
+          {
+            type: 'image',
+            image: {
+              link: 'https://www.dropbox.com/scl/fi/hry7c2y0gqamem3728tv4/Notifica-o-Entrega.png?rlkey=qo0v6sttqj0rf3ov5cydxevth&st=tll8o8ag&raw=1'
+            }
+          }
+        ]
+      }
+    ]
+  }
 });
 
-const recipient_number = '5544984146379';
-
-async function send_message() {
-    try {
-        console.log('Enviando mensagem...');
-        const sent_text_message = await wa.messages.template({
-            to: recipient_number,
-            template: {
-                name: 'hello_world',
-                language: {
-                    code: 'en_US'
-                }
-            }
-        });
-        console.log('Mensagem enviada:', sent_text_message.rawResponse());
-    } catch (e) {
-        console.log('Erro ao enviar mensagem:', JSON.stringify(e));
+async function send_messages() {
+  try {
+    console.log('Enviando mensagens...');
+    for (const number of recipient_numbers) {
+      console.log(`Enviando mensagem para: ${number}`);
+      const response = await axios.post(
+        `https://graph.facebook.com/v20.0/${process.env.WA_PHONE_NUMBER_ID}/messages`,
+        messageData(number),
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.CLOUD_API_ACCESS_TOKEN}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      console.log(`Mensagem enviada para ${number}:`, response.data);
     }
+  } catch (e) {
+    if (e.response) {
+      console.error('Erro ao enviar mensagem:', JSON.stringify(e.response.data, null, 2));
+    } else {
+      console.error('Erro ao enviar mensagem:', e.message);
+    }
+  }
 }
 
-send_message();
+send_messages();

@@ -4,6 +4,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node start.js",
+    "listen": "node listen.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -11,6 +12,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "axios": "^1.7.7",
     "dotenv": "^16.4.5",
     "whatsapp": "^0.0.5-Alpha"
   },
