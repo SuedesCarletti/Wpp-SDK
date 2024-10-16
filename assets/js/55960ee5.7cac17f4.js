@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkwhatsapp_sdk_docs=self.webpackChunkwhatsapp_sdk_docs||[]).push([[5151],{350:s=>{s.exports=JSON.parse('[{"label":"Getting started","permalink":"/Wpp-SDK/tags/getting-started","count":1}]')}}]);
