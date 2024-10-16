@@ -1,3 +1,5 @@
+// docusaurus.config.js
+
 // @ts-check
 // Note: type annotations allow type checking and IDEs autocompletion
 
@@ -11,16 +13,14 @@ const config = {
   favicon: 'img/favicon.ico',
   
   // Set the production url of your site here
-  url: 'https://SuedesCarletti.github.io', // Altere para o URL do seu GitHub Pages
+  url: 'https://SuedesCarletti.github.io',
   
   // Set the /<baseUrl>/ pathname under which your site is served
-  // For GitHub pages deployment, it is often '/<projectName>/'
-  baseUrl: '/Wpp-SDK/', // Altere para o nome do seu repositório
+  baseUrl: '/Wpp-SDK/',
   
   // GitHub pages deployment config.
-  // If you aren't using GitHub pages, you don't need these.
-  organizationName: 'SuedesCarletti', // Seu nome de usuário no GitHub
-  projectName: 'Wpp-SDK', // Nome do repositório no GitHub
+  organizationName: 'SuedesCarletti',
+  projectName: 'Wpp-SDK',
   
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
@@ -33,27 +33,23 @@ const config = {
   presets: [
     [
       'classic',
-      /** @type {import('@docusaurus/preset-classic').Options} */
-      ({
+      {
         docs: {
           routeBasePath: '/',
           sidebarPath: require.resolve('./sidebars.js'),
-          // Please change this to your repo.
-          // Remove this to remove the "edit this page" links.
           editUrl: 'https://github.com/SuedesCarletti/Wpp-SDK/tree/main/',
         },
         blog: false,
         theme: {
           customCss: require.resolve('./src/css/custom.css'),
         },
-      }),
+      },
     ],
   ],
 
-  themeConfig: /** @type {import('@docusaurus/preset-classic').ThemeConfig} */ ({
+  themeConfig: {
     colorMode: {
       defaultMode: 'dark',
-      // disableSwitch: false
     },
     image: 'img/docusaurus-social-card.jpg',
     navbar: {
@@ -139,7 +135,7 @@ const config = {
       theme: lightCodeTheme,
       darkTheme: darkCodeTheme,
     },
-  }),
+  },
 };
 
 module.exports = config;
