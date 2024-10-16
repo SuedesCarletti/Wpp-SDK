@@ -38,12 +38,34 @@
 }
 
 /* Custom styles for the Interactive Component */
+.interactive-page {
+  display: flex;
+}
+
+.conversation-list {
+  width: 25%;
+  border-right: 1px solid #ccc;
+  padding: 10px;
+}
+
+.conversation-list ul {
+  list-style: none;
+  padding: 0;
+}
+
+.conversation-list li {
+  padding: 10px;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+}
+
+.conversation-list li:hover {
+  background-color: #f0f0f0;
+}
+
 .interactive-component {
-  max-width: 600px;
-  margin: 0 auto;
+  width: 75%;
   padding: 20px;
-  border: 1px solid #ccc;
-  border-radius: 10px;
 }
 
 .interactive-component input,
