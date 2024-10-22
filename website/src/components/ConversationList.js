@@ -1,31 +1,20 @@
-// src/components/ConversationList.js
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import React from 'react';
 
-function ConversationList({ setActiveWamid }) {
-  const [conversations, setConversations] = useState([]);
-
-  useEffect(() => {
-    const fetchConversations = async () => {
-      try {
-        const response = await axios.get('https://whatsapapp.glitch.me/conversations'); // Endpoint que retorna a lista de conversas
-        setConversations(response.data);
-      } catch (error) {
-        console.error('Erro ao buscar conversas:', error);
-      }
-    };
-
-    fetchConversations();
-  }, []);
-
+function ConversationList({ conversations, onSelectConversation }) {
   return (
     <div className="conversation-list">
       <h2>Conversas</h2>
       <ul>
-        {conversations.map((conv, index) => (
-          <li key={index} onClick={() => setActiveWamid(conv.wamid)}>
-            <strong>{conv.name}</strong> {/* ou outro identificador da conversa */}
-            <p>{conv.lastMessage}</p>
+        {conversations.map((conversation, index) => (
+          <li key={index} onClick={() => onSelectConversation(conversation)}>
+            <strong>{conversation.name}</strong>: 
+            {conversation.messages.length > 0 && (
+              <>
+                {conversation.messages[conversation.messages.length - 1].type === "text" 
+                  ? conversation.messages[conversation.messages.length - 1].message 
+                  : conversation.messages[conversation.messages.length - 1].type}
+              </>
+            )}
           </li>
         ))}
       </ul>
