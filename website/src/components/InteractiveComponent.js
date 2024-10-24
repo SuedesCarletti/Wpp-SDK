@@ -6,18 +6,32 @@ const API_URL = 'https://whatsapapp.glitch.me';
 
 const fetchMediaUrl = async (mediaId) => {
   try {
-    const response = await axios.get(`${API_URL}/media/${mediaId}`);
-    if (response.data.url) {
-      const mediaResponse = await axios.get(response.data.url, {
-        headers: {
-          Authorization: `Bearer EAAcgS5sRJjgBO0411WBqvRjNQyMa7C8sfq4t6iiJ7cAQlWdjlFTdet4xhONS4X5GARw1xOwjifTTnvDwrvtIMLTJq3SXM64fDL5ByDTpDkZBkdc1rz1aw6Q9abKQprpjAAZBaDm9xMSHIBkLdye3ZC1YkC6FrccOAvBciOgTksOvGNzL5tiVWFPA3zl82ZCH8AZDZD`,
-        },
+    console.log(`Fetching media metadata for ID: ${mediaId}`);
+    // Primeira chamada para obter os metadados da mídia
+    const metadataResponse = await axios.get(`${API_URL}/media/${mediaId}`);
+    console.log('Metadata response:', metadataResponse.data);
+
+    if (metadataResponse.status === 200) {
+      const mediaMetadata = metadataResponse.data;
+      const mediaUrl = mediaMetadata.url;
+
+      // Segunda chamada para obter a mídia real via proxy
+      const proxyResponse = await axios.get(`${API_URL}/proxy_media/${mediaId}`, {
         responseType: 'blob',
       });
-      const blob = new Blob([mediaResponse.data]);
-      return URL.createObjectURL(blob);
+      console.log('Proxy media response:', proxyResponse);
+
+      if (proxyResponse.status === 200) {
+        const mediaBlob = new Blob([proxyResponse.data], { type: proxyResponse.headers['content-type'] });
+        return URL.createObjectURL(mediaBlob);
+      } else {
+        console.error(`Failed to fetch media via proxy, status: ${proxyResponse.status}`);
+        return '';
+      }
+    } else {
+      console.error(`Failed to fetch media metadata, status: ${metadataResponse.status}`);
+      return '';
     }
-    return '';
   } catch (error) {
     console.error('Erro ao obter a mídia:', error);
     return '';

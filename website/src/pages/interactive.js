@@ -4,9 +4,8 @@ import InteractiveComponent from '../components/InteractiveComponent';
 
 function InteractivePage() {
   return (
-    <Layout title="Interactive Page">
-      <div style={{ padding: '20px' }}>
-        <h1>Interação com WhatsApp</h1>
+    <Layout title="Interação com WhatsApp">
+      <div className="interactive-container">
         <InteractiveComponent />
       </div>
     </Layout>

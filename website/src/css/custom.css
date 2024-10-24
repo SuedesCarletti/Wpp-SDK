@@ -1,9 +1,8 @@
-/** 
+/**
  * Any CSS included here will be global. The classic template
  * bundles Infima by default. Infima is a CSS framework designed to
  * work well for content-centric websites.
  */
-
 /* You can override the default Infima variables here. */
 :root {
   --ifm-color-primary: #25d366;
@@ -40,6 +39,7 @@
 /* Custom styles for the Interactive Component */
 .interactive-page {
   display: flex;
+  height: 100vh;
 }
 
 .conversation-list {
@@ -63,16 +63,45 @@
   background-color: #f0f0f0;
 }
 
-.interactive-component {
+.main-content {
   width: 75%;
+  display: flex;
+  flex-direction: column;
   padding: 20px;
+  height: 100vh;
 }
 
-.interactive-component input,
-.interactive-component textarea {
+.messages {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.messages img {
+  max-width: 100px; /* Limita a largura do sticker */
+  max-height: 100px; /* Limita a altura do sticker */
+  border-radius: 5px; /* Bordas arredondadas para os stickers */
+  margin: 5px 0; /* Espaço entre os stickers e outras mensagens */
+}
+
+.send-message-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: auto; /* Move the form to the bottom */
   width: 100%;
-  margin-bottom: 10px;
+  background-color: #fff; /* Ensure the form is clearly visible */
+  padding: 10px;
+}
+
+.send-message-form input,
+.send-message-form textarea {
+  width: 100%;
   padding: 10px;
   border-radius: 5px;
   border: 1px solid #ccc;
+}
+
+/* Removendo o footer explicitamente */
+footer {
+  display: none;
 }

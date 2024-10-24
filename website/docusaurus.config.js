@@ -73,64 +73,6 @@ const config = {
       textColor: '#091E42',
       isCloseable: false,
     },
-    footer: {
-      style: 'dark',
-      links: [
-        {
-          title: 'Docs',
-          items: [
-            {
-              label: 'Cloud API',
-              to: 'https://developers.facebook.com/docs/whatsapp/cloud-api',
-            },
-            {
-              label: 'Business Management API',
-              to: 'https://developers.facebook.com/docs/whatsapp/business-management-api',
-            },
-          ],
-        },
-        {
-          title: 'Community',
-          items: [
-            {
-              label: 'LinkedIn',
-              href: 'https://www.linkedin.com/showcase/whatsapp-business/',
-            },
-            {
-              label: 'Twitter',
-              href: 'https://twitter.com/whatsappbiz',
-            },
-          ],
-        },
-        {
-          title: 'More',
-          items: [
-            {
-              label: 'GitHub',
-              href: 'https://github.com/SuedesCarletti/Wpp-SDK',
-            },
-          ],
-        },
-        {
-          title: 'Legal',
-          items: [
-            {
-              label: 'Privacy',
-              href: 'https://opensource.fb.com/legal/privacy',
-              target: '_blank',
-              rel: 'noreferrer noopener',
-            },
-            {
-              label: 'Terms',
-              href: 'https://opensource.fb.com/legal/terms',
-              target: '_blank',
-              rel: 'noreferrer noopener',
-            },
-          ],
-        },
-      ],
-      copyright: `Copyright © ${new Date().getFullYear()} Meta Platforms, Inc. Built for the dev community with love by Rashed Talukder using Docusaurus.`,
-    },
     prism: {
       theme: lightCodeTheme,
       darkTheme: darkCodeTheme,
