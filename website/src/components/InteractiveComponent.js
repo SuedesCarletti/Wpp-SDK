@@ -18,18 +18,20 @@ const fetchMediaUrl = async (mediaId) => {
 };
 
 const fetchMessagesWithMedia = async (messages) => {
-  return await Promise.all(messages.map(async (msg) => {
-    if (['sticker', 'image', 'video', 'audio', 'document'].includes(msg.type)) {
-      const mediaMetadata = msg.message;
-      const match = mediaMetadata.match(/'id': '(\d+)'/);
-      if (match) {
-        const mediaId = match[1];
-        const mediaUrl = await fetchMediaUrl(mediaId);
-        return { ...msg, mediaUrl };
+  return await Promise.all(
+    messages.map(async (msg) => {
+      if (['sticker', 'image', 'video', 'audio', 'document'].includes(msg.type)) {
+        const mediaMetadata = msg.message;
+        const match = mediaMetadata.match(/'id': '(\d+)'/);
+        if (match) {
+          const mediaId = match[1];
+          const mediaUrl = await fetchMediaUrl(mediaId);
+          return { ...msg, mediaUrl };
+        }
       }
-    }
-    return msg;
-  }));
+      return msg;
+    })
+  );
 };
 
 const InteractiveComponent = () => {
@@ -39,6 +41,16 @@ const InteractiveComponent = () => {
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const socket = useRef(null);
+
+  const fetchConversations = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/conversations`);
+      setConversations(response.data);
+      console.log('Conversas atualizadas:', response.data);
+    } catch (error) {
+      console.error('Erro ao buscar conversas:', error);
+    }
+  };
 
   useEffect(() => {
     socket.current = io(WS_URL, {
@@ -57,62 +69,57 @@ const InteractiveComponent = () => {
 
     socket.current.on('message', async (data) => {
       const newMessage = typeof data === 'string' ? JSON.parse(data) : data;
-      console.log("Nova mensagem recebida:", newMessage);
+      console.log('Nova mensagem recebida:', newMessage);
 
-    if (selectedConversation && newMessage.from_number === selectedConversation.name) {
-      setMessages((prevMessages) => [...prevMessages, newMessage]);
-      setSelectedConversation((prevConversation) => ({
-        ...prevConversation,
-        messages: [...prevConversation.messages, newMessage],
-      }));
-    }
+      // Adiciona mais detalhes ao log
+      console.log('Conversa selecionada no momento:', selectedConversation);
+      console.log('Número da mensagem recebida:', newMessage.from_number);
 
-    // Atualizar conversas
+      if (selectedConversation && newMessage.from_number === selectedConversation.name && selectedConversation.messages.some(msg => msg.contact_wamid === newMessage.from_number)) {
+        console.log('Mensagem pertence ao chat selecionado');
+        setMessages((prevMessages) => [...prevMessages, newMessage]);
+      } else {
+        console.log('Mensagem não pertence ao chat selecionado');
+        await fetchConversations();
+      }
+    });
+
     fetchConversations();
-  });
-}, [selectedConversation]);
 
-  const fetchConversations = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/conversations`);
-      setConversations(response.data);
-      console.log("Conversas atualizadas:", response.data);
-    } catch (error) {
-      console.error('Erro ao buscar conversas:', error);
-    }
-  };
-
-  useEffect(() => {
-    fetchConversations();
+    return () => {
+      if (socket.current) socket.current.disconnect();
+      console.log('Cleanup: Socket desconectado');
+    };
   }, []);
-
-  const handleConversationClick = useCallback(async (conversation) => {
-    console.log("Conversa selecionada:", conversation);
-    setSelectedConversation(conversation);
-    setNumber(conversation.name);
-    const updatedMessages = await fetchMessagesWithMedia(conversation.messages);
-    setMessages(updatedMessages);
-  }, [setSelectedConversation, setNumber, fetchMessagesWithMedia]);
 
   useEffect(() => {
     if (selectedConversation) {
       const fetchSelectedMessages = async () => {
         const updatedMessages = await fetchMessagesWithMedia(selectedConversation.messages);
         setMessages(updatedMessages);
+        console.log('Mensagens carregadas para a conversa selecionada:', updatedMessages);
       };
       fetchSelectedMessages();
     }
-  }, [selectedConversation, fetchMessagesWithMedia]);
+  }, [selectedConversation]);
+
+  const handleConversationClick = async (conversation) => {
+    console.log('Conversa selecionada:', conversation);
+    setSelectedConversation(conversation);
+    setNumber(conversation.name);
+    const updatedMessages = await fetchMessagesWithMedia(conversation.messages);
+    setMessages(updatedMessages);
+  };
 
   const sendMessage = async (e) => {
     e.preventDefault();
     try {
       const newMessage = {
-        from_number: "meu_numero",
+        from_number: 'meu_numero',
         message: message,
-        type: "text",
+        type: 'text',
       };
-      console.log("Enviando mensagem:", newMessage);
+      console.log('Enviando mensagem:', newMessage);
       socket.current.emit('message', JSON.stringify(newMessage));
       setMessages((prevMessages) => [...prevMessages, newMessage]);
       setSelectedConversation((prevConversation) => ({
@@ -136,34 +143,33 @@ const InteractiveComponent = () => {
           <h2>Mensagens Recebidas</h2>
           <ul>
             {selectedConversation &&
-              messages.map((msg, index) => (
-                <li key={index}>
-                  <strong>{msg.from_number}:</strong>
-                  {msg.type === "text" && msg.message}
-                  {['sticker', 'image', 'video', 'audio', 'document'].includes(
-                    msg.type
-                  ) && !msg.mediaUrl && <span>Carregando mídia...</span>}
-                  {msg.type === "sticker" && msg.mediaUrl && (
+              messages.map((msg) => (
+                <li key={msg.wamid}>
+                  <strong>{msg.from_number}</strong>
+                  {msg.type === 'text' && msg.message}
+                  {['sticker', 'image', 'video', 'audio', 'document'].includes(msg.type) &&
+                    !msg.mediaUrl && <span>Carregando mídia...</span>}
+                  {msg.type === 'sticker' && msg.mediaUrl && (
                     <div>
                       <img src={msg.mediaUrl} alt="Sticker" className="message-image" />
                     </div>
                   )}
-                  {msg.type === "image" && msg.mediaUrl && (
+                  {msg.type === 'image' && msg.mediaUrl && (
                     <div>
                       <img src={msg.mediaUrl} alt="Imagem" className="message-image" />
                     </div>
                   )}
-                  {msg.type === "video" && msg.mediaUrl && (
+                  {msg.type === 'video' && msg.mediaUrl && (
                     <div>
                       <video controls src={msg.mediaUrl}></video>
                     </div>
                   )}
-                  {msg.type === "audio" && msg.mediaUrl && (
+                  {msg.type === 'audio' && msg.mediaUrl && (
                     <div>
                       <audio controls src={msg.mediaUrl}></audio>
                     </div>
                   )}
-                  {msg.type === "document" && msg.mediaUrl && (
+                  {msg.type === 'document' && msg.mediaUrl && (
                     <div>
                       <a
                         href={msg.mediaUrl}
@@ -177,9 +183,7 @@ const InteractiveComponent = () => {
                   )}
                 </li>
               ))}
-            {!selectedConversation && (
-              <p>Selecione uma conversa para ver as mensagens.</p>
-            )}
+            {!selectedConversation && <p>Selecione uma conversa para ver as mensagens.</p>}
           </ul>
         </div>
         {selectedConversation && (
