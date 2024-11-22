@@ -7,7 +7,6 @@ import '../css/custom.css';
 const API_URL = 'https://wppapp.glitch.me';
 const WS_URL = 'ws://wppapp.glitch.me';
 
-// Função para obter URL de mídia com base no ID
 const fetchMediaUrl = async (mediaId) => {
   try {
     const mediaUrl = `${API_URL}/proxy_media/${mediaId}`;
@@ -19,7 +18,6 @@ const fetchMediaUrl = async (mediaId) => {
   }
 };
 
-// Função para adicionar mídia às mensagens
 const fetchMessagesWithMedia = async (messages) => {
   if (!messages || messages.length === 0) {
     console.log('Nenhuma mensagem para processar mídia.');
@@ -28,13 +26,17 @@ const fetchMessagesWithMedia = async (messages) => {
 
   return await Promise.all(
     messages.map(async (msg) => {
-      if (['sticker', 'image', 'video', 'audio', 'document'].includes(msg.type)) {
-        const match = msg.message && msg.message.match(/'id': '(\w+)'/);
-        if (match) {
-          const mediaId = match[1];
-          const mediaUrl = await fetchMediaUrl(mediaId);
-          return { ...msg, mediaUrl };
+      try {
+        if (['sticker', 'image', 'video', 'audio', 'document'].includes(msg.type)) {
+          const match = msg.message && msg.message.match(/'id': '(\w+)'/);
+          if (match) {
+            const mediaId = match[1];
+            const mediaUrl = await fetchMediaUrl(mediaId);
+            return { ...msg, mediaUrl };
+          }
         }
+      } catch (error) {
+        console.error('Erro ao processar mensagem com mídia:', msg, error);
       }
       return msg;
     })
@@ -50,17 +52,15 @@ const InteractiveComponent = () => {
   const selectedConversationRef = useRef(selectedConversation);
   const socket = useRef(null);
 
-  // Função para selecionar uma conversa
   const handleConversationClick = useCallback((conversation) => {
     console.log('Conversa selecionada:', conversation);
     const updatedMessages = conversation.messages?.length ? conversation.messages : [];
     setSelectedConversation(conversation);
     setMessages(updatedMessages);
-    setNumber(conversation.phone || '');
+    setNumber(conversation.phone || ''); // Verifica se o número está sendo atribuído corretamente
     localStorage.setItem('selectedConversation', JSON.stringify(conversation));
   }, []);
 
-  // Função para limpar seleção de conversa ao pressionar ESC
   const handleKeyPress = useCallback((event) => {
     if (event.key === 'Escape') {
       setSelectedConversation(null);
@@ -70,7 +70,6 @@ const InteractiveComponent = () => {
     }
   }, []);
 
-  // Função para enviar mensagem
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!number) {
@@ -91,106 +90,78 @@ const InteractiveComponent = () => {
     }
   };
 
-// Fetch inicial de conversas com mídia
-useEffect(() => {
-  const fetchInitialConversations = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/conversations`);
-      console.log('Conversas carregadas da API:', response.data);
-      if (Array.isArray(response.data) && response.data.length > 0) {
-        const conversationsWithMedia = await Promise.all(
-          response.data.map(async (conversation) => {
-            const updatedMessages = await fetchMessagesWithMedia(conversation.messages || []);
-            return { ...conversation, messages: updatedMessages };
-          })
-        );
-        setConversations(conversationsWithMedia);
-      } else {
-        console.log('Nenhuma conversa encontrada.');
-        setConversations([]);
-      }
-    } catch (error) {
-      console.error('Erro ao buscar conversas:', error);
-    }
-  };
-
-  fetchInitialConversations();
-}, []); // Este useEffect deve estar fechado corretamente.
-
-useEffect(() => {
-  socket.current = io(WS_URL, {
-    transports: ['websocket'],
-    reconnectionAttempts: 5,
-    timeout: 10000,
-  });
-
-  socket.current.on('connect', () => {
-    console.log('Conectado ao WebSocket');
-  });
-
-  socket.current.on('message', async (newMessage) => {
-    console.log('Mensagem recebida do WebSocket:', newMessage);
-
-    try {
-      const parsedMessage = typeof newMessage === 'string' ? JSON.parse(newMessage) : newMessage;
-      const { from_number, message, type } = parsedMessage;
-
-      // Atualizar a conversa existente ou criar uma nova
-      setConversations((prevConversations) => {
-        const existingConversationIndex = prevConversations.findIndex((conv) => conv.phone === from_number);
-
-        if (existingConversationIndex !== -1) {
-          // Se a conversa existir, adicionar a mensagem a ela
-          const updatedMessages = [
-            ...prevConversations[existingConversationIndex].messages,
-            parsedMessage,
-          ];
-
-          // Atualizar a conversa no estado
-          const updatedConversations = [...prevConversations];
-          updatedConversations[existingConversationIndex] = {
-            ...updatedConversations[existingConversationIndex],
-            messages: updatedMessages,
-          };
-
-          // Garantir que, se a conversa selecionada for a que recebeu a mensagem, ela seja destacada
-          if (selectedConversation && selectedConversation.phone === from_number) {
-            return updatedConversations; // Mantém a conversa selecionada intacta
-          } else {
-            return updatedConversations; // Atualiza o restante das conversas
-          }
+  useEffect(() => {
+    const fetchInitialConversations = async () => {
+      try {
+        const response = await axios.get(`${API_URL}/conversations`);
+        console.log('Conversas carregadas da API:', response.data);
+        if (Array.isArray(response.data) && response.data.length > 0) {
+          const conversationsWithMedia = await Promise.all(
+            response.data.map(async (conversation) => {
+              const updatedMessages = await fetchMessagesWithMedia(conversation.messages || []);
+              return { ...conversation, messages: updatedMessages };
+            })
+          );
+          setConversations(conversationsWithMedia);
         } else {
-          // Se não existir, criar uma nova conversa
-          const newConversation = {
-            id: `conv-${from_number}`,
-            name: `Conversa com ${from_number}`,
-            phone: from_number,
-            messages: [parsedMessage],
-          };
-          return [...prevConversations, newConversation];
+          console.log('Nenhuma conversa encontrada.');
+          setConversations([]);
+        }
+      } catch (error) {
+        console.error('Erro ao buscar conversas:', error);
+      }
+    };
+
+    fetchInitialConversations();
+  }, []);
+
+useEffect(() => {
+  if (!socket.current) {
+    socket.current = io(WS_URL, {
+      transports: ['websocket'],
+      reconnectionAttempts: 5,
+      timeout: 10000,
+    });
+
+    socket.current.on('connect', () => console.log('Conectado ao WebSocket'));
+
+    // Escute o evento correto 'conversation_update' que o servidor está emitindo
+    socket.current.on('conversation_update', async (updatedConversation) => {
+      // Verifica e padroniza o formato da conversa recebida
+      console.log('Conversa atualizada recebida do WebSocket:', updatedConversation);
+
+      // Padroniza a estrutura das mensagens recebidas
+      const updatedMessages = await fetchMessagesWithMedia(updatedConversation.messages || []);
+      const updatedConv = { ...updatedConversation, messages: updatedMessages };
+
+      // Atualiza as conversas no estado
+      setConversations((prevConversations) => {
+        const existingConvIndex = prevConversations.findIndex(
+          (conv) => conv.contact_wamid === updatedConv.contact_wamid
+        );
+
+        if (existingConvIndex !== -1) {
+          // Se a conversa já existe, atualize as mensagens
+          const updatedConvs = [...prevConversations];
+          updatedConvs[existingConvIndex] = updatedConv;
+          return updatedConvs;
+        } else {
+          // Se a conversa não existe, adicione a nova conversa
+          return [...prevConversations, updatedConv];
         }
       });
-    } catch (error) {
-      console.error('Erro ao processar a mensagem:', error);
-    }
-  });
+    });
+  }
 
+  // Limpeza ao desmontar o componente
   return () => {
     if (socket.current) {
       socket.current.disconnect();
+      socket.current = null;
     }
   };
-}, [selectedConversation]); // Adiciona selectedConversation como dependência para que o componente reaja à seleção
+}, []);
 
-  // Atualiza a referência de conversa selecionada
-  useEffect(() => {
-    selectedConversationRef.current = selectedConversation;
-    if (!selectedConversation) {
-      setNumber('');
-    }
-  }, [selectedConversation]);
-
-  // Adiciona evento de tecla ESC para limpar seleção
   useEffect(() => {
     window.addEventListener('keydown', handleKeyPress);
     return () => {
@@ -212,15 +183,17 @@ useEffect(() => {
               <ul>
                 {messages && messages.length > 0 ? (
                   messages.map((msg, index) => (
-                    <li key={msg.wamid || `${msg.from_number}-${index}`}>
+                    <li key={`${msg.contact_wamid || msg.from_number}-${index}`}>
                       <strong>{msg.from_number}</strong>: {msg.message}
-                      {['sticker', 'image', 'video', 'audio', 'document'].includes(msg.type) && !msg.mediaUrl && <span>Carregando mídia...</span>}
                       {msg.type === 'sticker' && msg.mediaUrl && <img src={msg.mediaUrl} alt="Sticker" className="sticker" />}
                       {msg.type === 'image' && msg.mediaUrl && <img src={msg.mediaUrl} alt="Imagem" className="image" />}
                       {msg.type === 'video' && msg.mediaUrl && <video controls src={msg.mediaUrl}></video>}
                       {msg.type === 'audio' && msg.mediaUrl && <audio controls src={msg.mediaUrl}></audio>}
                       {msg.type === 'document' && msg.mediaUrl && (
-                        <a href={msg.mediaUrl} download={msg.mediaUrl} target="_blank" rel="noopener noreferrer">Documento</a>
+                        <a href={msg.mediaUrl} download target="_blank" rel="noopener noreferrer">Documento</a>
+                      )}
+                      {['sticker', 'image', 'video', 'audio', 'document'].includes(msg.type) && !msg.mediaUrl && (
+                        <span>Carregando mídia...</span>
                       )}
                     </li>
                   ))
@@ -239,7 +212,7 @@ useEffect(() => {
             </form>
           </>
         ) : (
-          <p>Selecione uma conversa para ver as mensagens.</p>
+          <p>Selecione uma conversa para começar.</p>
         )}
       </div>
     </div>
