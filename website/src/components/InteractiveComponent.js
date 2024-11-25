@@ -7,6 +7,7 @@ import '../css/custom.css';
 const API_URL = 'https://wppapp.glitch.me';
 const WS_URL = 'ws://wppapp.glitch.me';
 
+// Função para buscar URL de mídia
 const fetchMediaUrl = async (mediaId) => {
   try {
     const mediaUrl = `${API_URL}/proxy_media/${mediaId}`;
@@ -18,6 +19,7 @@ const fetchMediaUrl = async (mediaId) => {
   }
 };
 
+// Função para buscar mensagens com mídia
 const fetchMessagesWithMedia = async (messages) => {
   if (!messages || messages.length === 0) {
     console.log('Nenhuma mensagem para processar mídia.');
@@ -49,9 +51,9 @@ const InteractiveComponent = () => {
   const [messages, setMessages] = useState([]);
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
-  const selectedConversationRef = useRef(selectedConversation);
   const socket = useRef(null);
 
+  // Função de clique na conversa
   const handleConversationClick = useCallback((conversation) => {
     console.log('Conversa selecionada:', conversation);
     const updatedMessages = conversation.messages?.length ? conversation.messages : [];
@@ -61,6 +63,7 @@ const InteractiveComponent = () => {
     localStorage.setItem('selectedConversation', JSON.stringify(conversation));
   }, []);
 
+  // Função para manipular o pressionamento de tecla (Escape)
   const handleKeyPress = useCallback((event) => {
     if (event.key === 'Escape') {
       setSelectedConversation(null);
@@ -70,6 +73,7 @@ const InteractiveComponent = () => {
     }
   }, []);
 
+  // Função para enviar mensagem
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!number) {
@@ -90,6 +94,7 @@ const InteractiveComponent = () => {
     }
   };
 
+  // Hook de efeito para carregar as conversas iniciais
   useEffect(() => {
     const fetchInitialConversations = async () => {
       try {
@@ -117,6 +122,7 @@ const InteractiveComponent = () => {
 
 useEffect(() => {
   if (!socket.current) {
+    // Inicialize o WebSocket uma vez
     socket.current = io(WS_URL, {
       transports: ['websocket'],
       reconnectionAttempts: 5,
@@ -125,43 +131,84 @@ useEffect(() => {
 
     socket.current.on('connect', () => console.log('Conectado ao WebSocket'));
 
-    // Escute o evento correto 'conversation_update' que o servidor está emitindo
     socket.current.on('conversation_update', async (updatedConversation) => {
-      // Verifica e padroniza o formato da conversa recebida
       console.log('Conversa atualizada recebida do WebSocket:', updatedConversation);
 
-      // Padroniza a estrutura das mensagens recebidas
       const updatedMessages = await fetchMessagesWithMedia(updatedConversation.messages || []);
-      const updatedConv = { ...updatedConversation, messages: updatedMessages };
 
-      // Atualiza as conversas no estado
+      // Define o nome do contato a partir de updatedConversation ou mantém o anterior
+      const contactName =
+        updatedConversation.contact_name ||
+        conversations.find((conv) => conv.from_number === updatedConversation.from_number)?.contact_name ||
+        "Desconhecido";
+
+      const updatedConv = {
+        ...updatedConversation,
+        messages: updatedMessages,
+        contact_name: contactName, // Certifique-se de definir o nome do contato
+      };
+
       setConversations((prevConversations) => {
         const existingConvIndex = prevConversations.findIndex(
-          (conv) => conv.contact_wamid === updatedConv.contact_wamid
+          (conv) => conv.from_number === updatedConv.from_number // Compara pelo número do contato
         );
 
         if (existingConvIndex !== -1) {
-          // Se a conversa já existe, atualize as mensagens
+          // Atualiza a conversa existente
           const updatedConvs = [...prevConversations];
-          updatedConvs[existingConvIndex] = updatedConv;
+          const existingConv = updatedConvs[existingConvIndex];
+
+          updatedConvs[existingConvIndex] = {
+            ...existingConv,
+            ...updatedConv,
+            contact_name: contactName, // Atualiza o nome do contato caso seja diferente
+          };
+
           return updatedConvs;
         } else {
-          // Se a conversa não existe, adicione a nova conversa
+          // Adiciona uma nova conversa com o nome do contato
           return [...prevConversations, updatedConv];
         }
       });
+
+      // Atualiza a lista de mensagens exibidas somente se for a conversa atualmente selecionada
+      if (
+        selectedConversation &&
+        updatedConversation.from_number === selectedConversation.from_number
+      ) {
+        setMessages(updatedMessages);
+      }
+    });
+
+    socket.current.on('disconnect', (reason) => {
+      console.warn(`WebSocket desconectado: ${reason}`);
+      if (reason !== 'io client disconnect') {
+        socket.current.connect();
+      }
     });
   }
 
-  // Limpeza ao desmontar o componente
   return () => {
     if (socket.current) {
       socket.current.disconnect();
       socket.current = null;
     }
   };
-}, []);
+}, []); // Mantém o WebSocket conectado continuamente
 
+useEffect(() => {
+  // Sincroniza mensagens exibidas com a conversa selecionada
+  if (selectedConversation) {
+    setMessages(selectedConversation.messages || []);
+  }
+}, [selectedConversation]);
+
+// Gerenciar manualmente a seleção da conversa
+const handleSelectConversation = (conversation) => {
+  setSelectedConversation(conversation);
+};
+
+  // Hook para adicionar o evento de "Escape"
   useEffect(() => {
     window.addEventListener('keydown', handleKeyPress);
     return () => {
@@ -184,7 +231,7 @@ useEffect(() => {
                 {messages && messages.length > 0 ? (
                   messages.map((msg, index) => (
                     <li key={`${msg.contact_wamid || msg.from_number}-${index}`}>
-                      <strong>{msg.from_number}</strong>: {msg.message}
+                      <strong>{msg.contact_name || msg.from_number}</strong>: {msg.message}
                       {msg.type === 'sticker' && msg.mediaUrl && <img src={msg.mediaUrl} alt="Sticker" className="sticker" />}
                       {msg.type === 'image' && msg.mediaUrl && <img src={msg.mediaUrl} alt="Imagem" className="image" />}
                       {msg.type === 'video' && msg.mediaUrl && <video controls src={msg.mediaUrl}></video>}
