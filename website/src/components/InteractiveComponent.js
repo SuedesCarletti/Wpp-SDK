@@ -3,6 +3,7 @@ import axios from 'axios';
 import { io } from 'socket.io-client';
 import ConversationList from './ConversationList';
 import '../css/custom.css';
+import produce from 'immer';
 
 const API_URL = 'https://wppapp.glitch.me';
 const WS_URL = 'ws://wppapp.glitch.me';
@@ -53,17 +54,23 @@ const InteractiveComponent = () => {
   const [selectedConversation, setSelectedConversation] = useState(null);
   const socket = useRef(null);
 
-  // Função de clique na conversa
-  const handleConversationClick = useCallback((conversation) => {
-    console.log('Conversa selecionada:', conversation);
-    const updatedMessages = conversation.messages?.length ? conversation.messages : [];
-    setSelectedConversation(conversation);
-    setMessages(updatedMessages);
-    setNumber(conversation.phone || ''); // Verifica se o número está sendo atribuído corretamente
-    localStorage.setItem('selectedConversation', JSON.stringify(conversation));
-  }, []);
+const handleConversationClick = useCallback((conversation) => {
+  // Remover logs de depuração
+  const fullConversation = conversations.find(conv => 
+    conv.contact_wamid === conversation.contact_wamid || 
+    conv.contact_wamid === conversation.wamid ||
+    conv.from_number === conversation.from_number ||
+    conv.name === conversation.name
+  );
 
-  // Função para manipular o pressionamento de tecla (Escape)
+  if (fullConversation) {
+    setSelectedConversation(fullConversation);
+    setMessages(fullConversation.messages || []);
+    setNumber(fullConversation.from_number || '');
+    localStorage.setItem('selectedConversation', JSON.stringify(fullConversation));
+  }
+}, [conversations]);
+
   const handleKeyPress = useCallback((event) => {
     if (event.key === 'Escape') {
       setSelectedConversation(null);
@@ -73,7 +80,28 @@ const InteractiveComponent = () => {
     }
   }, []);
 
-  // Função para enviar mensagem
+// Adicionar event listener para tecla Escape
+useEffect(() => {
+  const handleEscapeKey = (event) => {
+    if (event.key === 'Escape') {
+      clearSelectedConversation();
+    }
+  };
+
+  document.addEventListener('keydown', handleEscapeKey);
+  return () => {
+    document.removeEventListener('keydown', handleEscapeKey);
+  };
+}, []);
+
+// Adicionar método para limpar seleção
+const clearSelectedConversation = () => {
+  setSelectedConversation(null);
+  setMessages([]);
+  setNumber('');
+  localStorage.removeItem('selectedConversation');
+};
+
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!number) {
@@ -94,20 +122,50 @@ const InteractiveComponent = () => {
     }
   };
 
-  // Hook de efeito para carregar as conversas iniciais
   useEffect(() => {
     const fetchInitialConversations = async () => {
       try {
         const response = await axios.get(`${API_URL}/conversations`);
         console.log('Conversas carregadas da API:', response.data);
+
         if (Array.isArray(response.data) && response.data.length > 0) {
           const conversationsWithMedia = await Promise.all(
             response.data.map(async (conversation) => {
-              const updatedMessages = await fetchMessagesWithMedia(conversation.messages || []);
-              return { ...conversation, messages: updatedMessages };
+              const enhancedConversation = {
+                ...conversation,
+                contact_wamid: conversation.contact_wamid || conversation.wamid,
+                from_number: conversation.from_number || conversation.phone,
+                name: conversation.name || conversation.contact_name || 'Contato Desconhecido'
+              };
+
+              const updatedMessages = await fetchMessagesWithMedia(enhancedConversation.messages || []);
+              return {
+                ...enhancedConversation,
+                messages: updatedMessages
+              };
             })
           );
-          setConversations(conversationsWithMedia);
+
+          const sortedConversations = conversationsWithMedia.sort((a, b) => {
+            const dateA = new Date(a.lastMessageTimestamp || 0);
+            const dateB = new Date(b.lastMessageTimestamp || 0);
+            return dateB - dateA;
+          });
+
+          setConversations(sortedConversations);
+
+          const savedConversation = localStorage.getItem('selectedConversation');
+          if (savedConversation) {
+            const parsedConversation = JSON.parse(savedConversation);
+            const foundConversation = sortedConversations.find(
+              conv => conv.contact_wamid === parsedConversation.contact_wamid
+            );
+
+            if (foundConversation) {
+              handleConversationClick(foundConversation);
+            }
+          }
+
         } else {
           console.log('Nenhuma conversa encontrada.');
           setConversations([]);
@@ -118,136 +176,118 @@ const InteractiveComponent = () => {
     };
 
     fetchInitialConversations();
-  }, []);
+  }, [handleConversationClick]);
 
-useEffect(() => {
-  if (!socket.current) {
-    // Inicialize o WebSocket uma vez
-    socket.current = io(WS_URL, {
-      transports: ['websocket'],
-      reconnectionAttempts: 5,
-      timeout: 10000,
-    });
+  useEffect(() => {
+    if (!socket.current) {
+      console.log('Inicializando o WebSocket...');
 
-    socket.current.on('connect', () => console.log('Conectado ao WebSocket'));
-
-    socket.current.on('conversation_update', async (updatedConversation) => {
-      console.log('Conversa atualizada recebida do WebSocket:', updatedConversation);
-
-      const updatedMessages = await fetchMessagesWithMedia(updatedConversation.messages || []);
-
-      // Define o nome do contato a partir de updatedConversation ou mantém o anterior
-      const contactName =
-        updatedConversation.contact_name ||
-        conversations.find((conv) => conv.from_number === updatedConversation.from_number)?.contact_name ||
-        "Desconhecido";
-
-      const updatedConv = {
-        ...updatedConversation,
-        messages: updatedMessages,
-        contact_name: contactName, // Certifique-se de definir o nome do contato
-      };
-
-      setConversations((prevConversations) => {
-        const existingConvIndex = prevConversations.findIndex(
-          (conv) => conv.from_number === updatedConv.from_number // Compara pelo número do contato
-        );
-
-        if (existingConvIndex !== -1) {
-          // Atualiza a conversa existente
-          const updatedConvs = [...prevConversations];
-          const existingConv = updatedConvs[existingConvIndex];
-
-          updatedConvs[existingConvIndex] = {
-            ...existingConv,
-            ...updatedConv,
-            contact_name: contactName, // Atualiza o nome do contato caso seja diferente
-          };
-
-          return updatedConvs;
-        } else {
-          // Adiciona uma nova conversa com o nome do contato
-          return [...prevConversations, updatedConv];
-        }
+      socket.current = io(WS_URL, {
+        transports: ['websocket'],
+        reconnectionAttempts: 5,
+        timeout: 10000,
       });
 
-      // Atualiza a lista de mensagens exibidas somente se for a conversa atualmente selecionada
-      if (
-        selectedConversation &&
-        updatedConversation.from_number === selectedConversation.from_number
-      ) {
-        setMessages(updatedMessages);
-      }
-    });
+      socket.current.on('connect', () => {
+        console.log('Conectado ao WebSocket');
+      });
 
-    socket.current.on('disconnect', (reason) => {
-      console.warn(`WebSocket desconectado: ${reason}`);
-      if (reason !== 'io client disconnect') {
-        socket.current.connect();
-      }
-    });
-  }
+      socket.current.on('disconnect', (reason) => {
+        console.warn('WebSocket desconectado:', reason);
+      });
 
-  return () => {
-    if (socket.current) {
-      socket.current.disconnect();
-      socket.current = null;
+      socket.current.on('conversation_update', async (updatedConversation) => {
+        console.log('Conversa atualizada recebida:', updatedConversation);
+
+        const updatedMessages = await fetchMessagesWithMedia(updatedConversation.messages);
+
+        const updatedConv = {
+          ...updatedConversation,
+          messages: updatedMessages,
+          contact_name: updatedConversation.contact_name || 'Desconhecido',
+        };
+
+        setConversations((prevConversations) =>
+          produce(prevConversations, (draft) => {
+            const existingConvIndex = draft.findIndex(
+              (conv) => conv.contact_wamid === updatedConv.contact_wamid
+            );
+
+            if (existingConvIndex !== -1) {
+              const existingConv = draft[existingConvIndex];
+
+              const newMessages = updatedConv.messages.filter((newMsg) =>
+                !existingConv.messages.some((oldMsg) => oldMsg.wamid === newMsg.wamid)
+              );
+
+              existingConv.messages = [
+                ...new Map(
+                  [...existingConv.messages, ...newMessages].map((msg) => [msg.wamid, msg])
+                ).values(),
+              ];
+              existingConv.lastMessage =
+                newMessages[newMessages.length - 1]?.message || existingConv.lastMessage;
+            } else {
+              draft.push({
+                ...updatedConv,
+                contact_name: updatedConv.contact_name || updatedConv.from_number,
+                messages: updatedConv.messages.map((msg) => (msg.contact_name ? msg : { ...msg, contact_name: msg.from_number })),
+              });
+            }
+          })
+        );
+
+        if (selectedConversation && selectedConversation.contact_wamid === updatedConv.contact_wamid) {
+          setMessages((prevMessages) => [
+            ...new Map(
+              [...prevMessages, ...updatedMessages].map((msg) => [msg.wamid, msg])
+            ).values(),
+          ]);
+        }
+      });
     }
+  }, [selectedConversation]);
+
+  const renderMessages = () => {
+    if (!messages || messages.length === 0) {
+      return <p>Nenhuma mensagem encontrada nesta conversa.</p>;
+    }
+
+    return (
+      <ul>
+        {messages.map((msg, index) => (
+          <li key={`${msg.wamid || msg.from_number}-${index}`}>
+            <strong>{msg.contact_name || msg.from_number}</strong>: {msg.message || msg.lastMessage}
+            {msg.type && ['sticker', 'image', 'video', 'audio', 'document'].includes(msg.type) && (
+              <>
+                {msg.type === 'sticker' && msg.mediaUrl && <img src={msg.mediaUrl} alt="Sticker" className="sticker" />}
+                {msg.type === 'image' && msg.mediaUrl && <img src={msg.mediaUrl} alt="Imagem" className="image" />}
+                {msg.type === 'video' && msg.mediaUrl && <video controls src={msg.mediaUrl}></video>}
+                {msg.type === 'audio' && msg.mediaUrl && <audio controls src={msg.mediaUrl}></audio>}
+                {msg.type === 'document' && msg.mediaUrl && (
+                  <a href={msg.mediaUrl} download target="_blank" rel="noopener noreferrer">Documento</a>
+                )}
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+    );
   };
-}, []); // Mantém o WebSocket conectado continuamente
-
-useEffect(() => {
-  // Sincroniza mensagens exibidas com a conversa selecionada
-  if (selectedConversation) {
-    setMessages(selectedConversation.messages || []);
-  }
-}, [selectedConversation]);
-
-// Gerenciar manualmente a seleção da conversa
-const handleSelectConversation = (conversation) => {
-  setSelectedConversation(conversation);
-};
-
-  // Hook para adicionar o evento de "Escape"
-  useEffect(() => {
-    window.addEventListener('keydown', handleKeyPress);
-    return () => {
-      window.removeEventListener('keydown', handleKeyPress);
-    };
-  }, [handleKeyPress]);
 
   return (
     <div className="interactive-page">
       <ConversationList
         onSelectConversation={handleConversationClick}
         conversations={conversations}
+        selectedConversation={selectedConversation}
       />
       <div className="main-content">
         {selectedConversation ? (
           <>
             <div className="messages">
-              <h2>Mensagens Recebidas</h2>
-              <ul>
-                {messages && messages.length > 0 ? (
-                  messages.map((msg, index) => (
-                    <li key={`${msg.contact_wamid || msg.from_number}-${index}`}>
-                      <strong>{msg.contact_name || msg.from_number}</strong>: {msg.message}
-                      {msg.type === 'sticker' && msg.mediaUrl && <img src={msg.mediaUrl} alt="Sticker" className="sticker" />}
-                      {msg.type === 'image' && msg.mediaUrl && <img src={msg.mediaUrl} alt="Imagem" className="image" />}
-                      {msg.type === 'video' && msg.mediaUrl && <video controls src={msg.mediaUrl}></video>}
-                      {msg.type === 'audio' && msg.mediaUrl && <audio controls src={msg.mediaUrl}></audio>}
-                      {msg.type === 'document' && msg.mediaUrl && (
-                        <a href={msg.mediaUrl} download target="_blank" rel="noopener noreferrer">Documento</a>
-                      )}
-                      {['sticker', 'image', 'video', 'audio', 'document'].includes(msg.type) && !msg.mediaUrl && (
-                        <span>Carregando mídia...</span>
-                      )}
-                    </li>
-                  ))
-                ) : (
-                  <p>Nenhuma mensagem encontrada nesta conversa.</p>
-                )}
-              </ul>
+              <h2>Mensagens de {selectedConversation.name || 'Contato'}</h2>
+              {renderMessages()}
             </div>
             <form className="send-message-form" onSubmit={sendMessage}>
               <textarea
