@@ -3,12 +3,11 @@ import axios from 'axios';
 import { io } from 'socket.io-client';
 import ConversationList from './ConversationList';
 import '../css/custom.css';
-import produce from 'immer';
 
 const API_URL = 'https://wppapp.glitch.me';
 const WS_URL = 'ws://wppapp.glitch.me';
 
-// Função para buscar URL de mídia
+// Função para recuperar URL de mídia
 const fetchMediaUrl = async (mediaId) => {
   try {
     const mediaUrl = `${API_URL}/proxy_media/${mediaId}`;
@@ -20,12 +19,9 @@ const fetchMediaUrl = async (mediaId) => {
   }
 };
 
-// Função para buscar mensagens com mídia
+// Função para processar mensagens com mídia
 const fetchMessagesWithMedia = async (messages) => {
-  if (!messages || messages.length === 0) {
-    console.log('Nenhuma mensagem para processar mídia.');
-    return [];
-  }
+  if (!messages || messages.length === 0) return [];
 
   return await Promise.all(
     messages.map(async (msg) => {
@@ -48,254 +44,427 @@ const fetchMessagesWithMedia = async (messages) => {
 
 const InteractiveComponent = () => {
   const [message, setMessage] = useState('');
-  const [number, setNumber] = useState('');
-  const [messages, setMessages] = useState([]);
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
-  const socket = useRef(null);
+  const [messages, setMessages] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [mediaFile, setMediaFile] = useState(null);
+  const [mediaType, setMediaType] = useState('');
 
-const handleConversationClick = useCallback((conversation) => {
-  // Remover logs de depuração
-  const fullConversation = conversations.find(conv => 
-    conv.contact_wamid === conversation.contact_wamid || 
-    conv.contact_wamid === conversation.wamid ||
-    conv.from_number === conversation.from_number ||
-    conv.name === conversation.name
-  );
+  const fileInputRef = useRef(null);
+  const socketRef = useRef(null);
 
-  if (fullConversation) {
-    setSelectedConversation(fullConversation);
-    setMessages(fullConversation.messages || []);
-    setNumber(fullConversation.from_number || '');
-    localStorage.setItem('selectedConversation', JSON.stringify(fullConversation));
-  }
-}, [conversations]);
+  // Normalizar contato com processamento de mídia
+  const normalizeContact = async (contact) => {
+    const firstMessage = contact.messages[0];
+    const messages = contact.messages || [];
 
-  const handleKeyPress = useCallback((event) => {
-    if (event.key === 'Escape') {
-      setSelectedConversation(null);
-      setMessages([]);
-      setNumber('');
-      localStorage.removeItem('selectedConversation');
+    const messagesWithMedia = await fetchMessagesWithMedia(messages);
+
+    return {
+      id: contact.wamid ||
+           (firstMessage.contacts && firstMessage.contacts[0].wa_id) ||
+           firstMessage.from_number,
+      wamid: contact.wamid ||
+             (firstMessage.contacts && firstMessage.contacts[0].wa_id),
+      fromNumber: firstMessage.from_number,
+      name: contact.name ||
+            (firstMessage.contacts && firstMessage.contacts[0].profile.name) ||
+            firstMessage.contact_name ||
+            'Contato Desconhecido',
+      messages: messagesWithMedia,
+      lastMessage: messages[messages.length - 1]?.message || '',
+      timestamp: messages[messages.length - 1]?.timestamp || new Date().toISOString()
+    };
+  };
+
+  // Buscar conversas
+  const fetchConversations = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const response = await axios.get(`${API_URL}/conversations`);
+
+      const processedContacts = await Promise.all(
+        response.data.map(normalizeContact)
+      );
+
+      const sortedConversations = processedContacts.sort((a, b) =>
+        new Date(b.timestamp) - new Date(a.timestamp)
+      );
+
+      setConversations(sortedConversations);
+
+      if (sortedConversations.length > 0) {
+        const firstConversation = sortedConversations[0];
+        setSelectedConversation(firstConversation);
+        setMessages(firstConversation.messages || []);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar conversas:', error);
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
-// Adicionar event listener para tecla Escape
-useEffect(() => {
-  const handleEscapeKey = (event) => {
-    if (event.key === 'Escape') {
-      clearSelectedConversation();
+  // Tratamento de upload de mídia
+  const handleMediaUpload = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const fileType = file.type.split('/')[0];
+      const allowedTypes = ['image', 'video', 'audio', 'application'];
+      
+      if (allowedTypes.includes(fileType)) {
+        setMediaFile(file);
+        setMediaType(
+          fileType === 'application' 
+            ? 'document' 
+            : fileType
+        );
+      } else {
+        alert('Tipo de arquivo não suportado');
+      }
     }
   };
 
-  document.addEventListener('keydown', handleEscapeKey);
-  return () => {
-    document.removeEventListener('keydown', handleEscapeKey);
-  };
-}, []);
-
-// Adicionar método para limpar seleção
-const clearSelectedConversation = () => {
-  setSelectedConversation(null);
-  setMessages([]);
-  setNumber('');
-  localStorage.removeItem('selectedConversation');
-};
-
+  // Enviar mensagem/mídia
   const sendMessage = async (e) => {
     e.preventDefault();
-    if (!number) {
-      alert('Por favor, selecione uma conversa válida antes de enviar uma mensagem.');
+
+    if (!selectedConversation) {
+      alert('Selecione uma conversa primeiro');
       return;
     }
-    if (message.trim()) {
-      try {
-        const response = await axios.post(`${API_URL}/send`, { number, message });
-        console.log(`Mensagem enviada para ${number}: ${message}`);
-        setMessages((prevMessages) => [...prevMessages, { from_number: 'Você', message, type: 'text' }]);
-        setMessage('');
-      } catch (error) {
-        console.error('Erro ao enviar mensagem:', error);
-      }
-    } else {
-      alert('Por favor, insira uma mensagem para enviar.');
+
+    const to = selectedConversation.fromNumber || selectedConversation.wamid;
+    if (!to) {
+      alert('Número de contato inválido ou ausente.');
+      return;
     }
-  };
 
-  useEffect(() => {
-    const fetchInitialConversations = async () => {
-      try {
-        const response = await axios.get(`${API_URL}/conversations`);
-        console.log('Conversas carregadas da API:', response.data);
+    const isMediaUpload = mediaFile !== null;
+    const content = isMediaUpload ? mediaFile : message;
 
-        if (Array.isArray(response.data) && response.data.length > 0) {
-          const conversationsWithMedia = await Promise.all(
-            response.data.map(async (conversation) => {
-              const enhancedConversation = {
-                ...conversation,
-                contact_wamid: conversation.contact_wamid || conversation.wamid,
-                from_number: conversation.from_number || conversation.phone,
-                name: conversation.name || conversation.contact_name || 'Contato Desconhecido'
-              };
+    if (!isMediaUpload && !message.trim()) {
+      alert('Digite uma mensagem antes de enviar.');
+      return;
+    }
 
-              const updatedMessages = await fetchMessagesWithMedia(enhancedConversation.messages || []);
-              return {
-                ...enhancedConversation,
-                messages: updatedMessages
-              };
-            })
-          );
+    try {
+      const tempWamid = `temp_${Date.now()}`;
 
-          const sortedConversations = conversationsWithMedia.sort((a, b) => {
-            const dateA = new Date(a.lastMessageTimestamp || 0);
-            const dateB = new Date(b.lastMessageTimestamp || 0);
-            return dateB - dateA;
-          });
-
-          setConversations(sortedConversations);
-
-          const savedConversation = localStorage.getItem('selectedConversation');
-          if (savedConversation) {
-            const parsedConversation = JSON.parse(savedConversation);
-            const foundConversation = sortedConversations.find(
-              conv => conv.contact_wamid === parsedConversation.contact_wamid
-            );
-
-            if (foundConversation) {
-              handleConversationClick(foundConversation);
-            }
-          }
-
-        } else {
-          console.log('Nenhuma conversa encontrada.');
-          setConversations([]);
-        }
-      } catch (error) {
-        console.error('Erro ao buscar conversas:', error);
+      const formData = new FormData();
+      formData.append('to', to);
+      formData.append('type', isMediaUpload ? mediaType : 'text');
+      
+      if (isMediaUpload) {
+        formData.append('media', mediaFile);
+      } else {
+        formData.append('message', message);
       }
-    };
 
-    fetchInitialConversations();
-  }, [handleConversationClick]);
+      // Atualizar conversas com mensagem temporária
+      setConversations((prevConversations) => {
+        const updatedConversations = prevConversations.map(conv => {
+          if (conv.wamid === selectedConversation.wamid ||
+              conv.fromNumber === selectedConversation.fromNumber) {
+            const newMessage = {
+              from_number: 'meu_numero',
+              message: isMediaUpload ? `Enviando ${mediaType}` : message,
+              wamid: tempWamid,
+              type: isMediaUpload ? mediaType : 'text',
+              timestamp: new Date().toISOString()
+            };
 
-  useEffect(() => {
-    if (!socket.current) {
-      console.log('Inicializando o WebSocket...');
+            return {
+              ...conv,
+              messages: [...conv.messages, newMessage],
+              lastMessage: newMessage.message,
+              timestamp: new Date().toISOString()
+            };
+          }
+          return conv;
+        });
 
-      socket.current = io(WS_URL, {
-        transports: ['websocket'],
-        reconnectionAttempts: 5,
-        timeout: 10000,
+        return updatedConversations.sort((a, b) =>
+          new Date(b.timestamp) - new Date(a.timestamp)
+        );
       });
 
-      socket.current.on('connect', () => {
-        console.log('Conectado ao WebSocket');
+      // Atualizar mensagens selecionadas
+      setMessages((prevMessages) => [
+        ...prevMessages,
+        {
+          from_number: 'meu_numero',
+          message: isMediaUpload ? `Enviando ${mediaType}` : message,
+          wamid: tempWamid,
+          type: isMediaUpload ? mediaType : 'text',
+          timestamp: new Date().toISOString()
+        }
+      ]);
+
+      // Enviar via API
+      const response = await axios.post(`${API_URL}/send`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
       });
 
-      socket.current.on('disconnect', (reason) => {
-        console.warn('WebSocket desconectado:', reason);
-      });
-
-      socket.current.on('conversation_update', async (updatedConversation) => {
-        console.log('Conversa atualizada recebida:', updatedConversation);
-
-        const updatedMessages = await fetchMessagesWithMedia(updatedConversation.messages);
-
-        const updatedConv = {
-          ...updatedConversation,
-          messages: updatedMessages,
-          contact_name: updatedConversation.contact_name || 'Desconhecido',
-        };
+      // Substituir mensagem temporária pela confirmada
+      if (response.data && response.data.messages && response.data.messages[0].id) {
+        const actualWamid = response.data.messages[0].id;
 
         setConversations((prevConversations) =>
-          produce(prevConversations, (draft) => {
-            const existingConvIndex = draft.findIndex(
-              (conv) => conv.contact_wamid === updatedConv.contact_wamid
-            );
-
-            if (existingConvIndex !== -1) {
-              const existingConv = draft[existingConvIndex];
-
-              const newMessages = updatedConv.messages.filter((newMsg) =>
-                !existingConv.messages.some((oldMsg) => oldMsg.wamid === newMsg.wamid)
-              );
-
-              existingConv.messages = [
-                ...new Map(
-                  [...existingConv.messages, ...newMessages].map((msg) => [msg.wamid, msg])
-                ).values(),
-              ];
-              existingConv.lastMessage =
-                newMessages[newMessages.length - 1]?.message || existingConv.lastMessage;
-            } else {
-              draft.push({
-                ...updatedConv,
-                contact_name: updatedConv.contact_name || updatedConv.from_number,
-                messages: updatedConv.messages.map((msg) => (msg.contact_name ? msg : { ...msg, contact_name: msg.from_number })),
-              });
+          prevConversations.map(conv => {
+            if (conv.wamid === selectedConversation.wamid ||
+                conv.fromNumber === selectedConversation.fromNumber) {
+              return {
+                ...conv,
+                messages: conv.messages.map(msg =>
+                  msg.wamid === tempWamid
+                    ? {...msg, wamid: actualWamid}
+                    : msg
+                )
+              };
             }
+            return conv;
           })
         );
 
-        if (selectedConversation && selectedConversation.contact_wamid === updatedConv.contact_wamid) {
-          setMessages((prevMessages) => [
-            ...new Map(
-              [...prevMessages, ...updatedMessages].map((msg) => [msg.wamid, msg])
-            ).values(),
-          ]);
-        }
-      });
-    }
-  }, [selectedConversation]);
+        setMessages((prevMessages) =>
+          prevMessages.map(msg =>
+            msg.wamid === tempWamid
+              ? {...msg, wamid: actualWamid}
+              : msg
+          )
+        );
+      }
 
-  const renderMessages = () => {
-    if (!messages || messages.length === 0) {
-      return <p>Nenhuma mensagem encontrada nesta conversa.</p>;
-    }
+      // Limpar estados de envio
+      setMessage('');
+      setMediaFile(null);
+      setMediaType('');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
 
-    return (
-      <ul>
-        {messages.map((msg, index) => (
-          <li key={`${msg.wamid || msg.from_number}-${index}`}>
-            <strong>{msg.contact_name || msg.from_number}</strong>: {msg.message || msg.lastMessage}
-            {msg.type && ['sticker', 'image', 'video', 'audio', 'document'].includes(msg.type) && (
-              <>
-                {msg.type === 'sticker' && msg.mediaUrl && <img src={msg.mediaUrl} alt="Sticker" className="sticker" />}
-                {msg.type === 'image' && msg.mediaUrl && <img src={msg.mediaUrl} alt="Imagem" className="image" />}
-                {msg.type === 'video' && msg.mediaUrl && <video controls src={msg.mediaUrl}></video>}
-                {msg.type === 'audio' && msg.mediaUrl && <audio controls src={msg.mediaUrl}></audio>}
-                {msg.type === 'document' && msg.mediaUrl && (
-                  <a href={msg.mediaUrl} download target="_blank" rel="noopener noreferrer">Documento</a>
-                )}
-              </>
-            )}
-          </li>
-        ))}
-      </ul>
-    );
+    } catch (error) {
+      console.error('Erro ao enviar mensagem:', error);
+      alert('Falha ao enviar mensagem. Por favor, tente novamente.');
+    }
   };
 
+  // Configurar WebSocket
+  useEffect(() => {
+    socketRef.current = io(WS_URL, {
+      transports: ['websocket'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      timeout: 10000,
+    });
+
+    fetchConversations();
+
+    socketRef.current.on('conversation_update', async (updatedContact) => {
+      try {
+        const normalizedContact = await normalizeContact(updatedContact);
+
+        // Atualizar lista de conversas
+        setConversations((prevConversations) => {
+          const existingIndex = prevConversations.findIndex(
+            (conv) => conv.wamid === normalizedContact.wamid ||
+                      conv.fromNumber === normalizedContact.fromNumber
+          );
+
+          if (existingIndex !== -1) {
+            const existingMessages = prevConversations[existingIndex].messages;
+            const existingWamids = new Set(existingMessages.map(msg => msg.wamid));
+
+            // Filtrar apenas novas mensagens
+            const newMessages = normalizedContact.messages.filter(
+              msg => !existingWamids.has(msg.wamid)
+            );
+
+            const mergedConversations = [...prevConversations];
+            mergedConversations[existingIndex] = {
+              ...prevConversations[existingIndex],
+              messages: [...existingMessages, ...newMessages],
+              lastMessage: newMessages.length > 0
+                ? newMessages[newMessages.length - 1].message
+                : prevConversations[existingIndex].lastMessage,
+              timestamp: newMessages.length > 0
+                ? newMessages[newMessages.length - 1].timestamp
+                : prevConversations[existingIndex].timestamp
+            };
+
+            return mergedConversations.sort((a, b) =>
+              new Date(b.timestamp) - new Date(a.timestamp)
+            );
+          }
+
+          return [...prevConversations, normalizedContact].sort((a, b) =>
+            new Date(b.timestamp) - new Date(a.timestamp)
+          );
+        });
+
+        // Atualizar conversa selecionada em tempo real
+        setSelectedConversation((prevSelectedConversation) => {
+          if (prevSelectedConversation &&
+              (prevSelectedConversation.wamid === normalizedContact.wamid ||
+               prevSelectedConversation.fromNumber === normalizedContact.fromNumber)) {
+            const existingWamids = new Set(
+              prevSelectedConversation.messages.map(msg => msg.wamid)
+            );
+
+            const newMessages = normalizedContact.messages.filter(
+              msg => !existingWamids.has(msg.wamid)
+            );
+
+            const updatedSelectedConversation = {
+              ...prevSelectedConversation,
+              messages: [...prevSelectedConversation.messages, ...newMessages],
+              lastMessage: newMessages.length > 0
+                ? newMessages[newMessages.length - 1].message
+                : prevSelectedConversation.lastMessage,
+              timestamp: newMessages.length > 0
+                ? newMessages[newMessages.length - 1].timestamp
+                : prevSelectedConversation.timestamp
+            };
+
+            // Atualizar mensagens diretamente para conversa selecionada
+            setMessages(updatedSelectedConversation.messages);
+
+            return updatedSelectedConversation;
+          }
+          return prevSelectedConversation;
+        });
+      } catch (error) {
+        console.error('Erro no processamento da atualização:', error);
+      }
+    });
+
+    socketRef.current.on('connect', () => {
+      console.log('Conectado ao servidor de WebSocket');
+    });
+
+    socketRef.current.on('disconnect', () => {
+      console.log('Desconectado do servidor de WebSocket');
+    });
+
+    return () => {
+      socketRef.current.disconnect();
+    };
+  }, [fetchConversations]);
+
+  // Selecionar conversa
+  const handleSelectConversation = useCallback((conversation) => {
+    setSelectedConversation(conversation);
+    setMessages(conversation.messages || []);
+    localStorage.setItem('selectedConversation', JSON.stringify(conversation));
+  }, []);
+
+  // Renderização do componente
   return (
     <div className="interactive-page">
       <ConversationList
-        onSelectConversation={handleConversationClick}
+        onSelectConversation={handleSelectConversation}
         conversations={conversations}
-        selectedConversation={selectedConversation}
       />
       <div className="main-content">
         {selectedConversation ? (
           <>
             <div className="messages">
-              <h2>Mensagens de {selectedConversation.name || 'Contato'}</h2>
-              {renderMessages()}
+              <h2>Mensagens Recebidas</h2>
+              <ul>
+                {Array.isArray(messages) && messages.length > 0 ? (
+                  messages.map((msg, index) => (
+                    <li key={`${msg.wamid || msg.from_number}-${index}`}>
+                      <strong>{msg.contact_name || msg.from_number}</strong>: {msg.message}
+                      {msg.type === 'sticker' && (msg.proxy_media || msg.mediaUrl) && (
+                        <img
+                          src={msg.proxy_media || msg.mediaUrl}
+                          alt="Sticker"
+                          className="sticker"
+                        />
+                      )}
+                      {msg.type === 'image' && (msg.proxy_media || msg.mediaUrl) && (
+                        <img
+                          src={msg.proxy_media || msg.mediaUrl}
+                          alt="Imagem"
+                          className="image"
+                        />
+                      )}
+                      {msg.type === 'video' && (msg.proxy_media || msg.mediaUrl) && (
+                        <video controls>
+                          <source src={msg.proxy_media || msg.mediaUrl} type="video/mp4" />
+                          Seu navegador não suporta a reprodução de vídeo.
+                        </video>
+                      )}
+                      {msg.type === 'audio' && (msg.proxy_media || msg.mediaUrl) && (
+                        <audio controls>
+                          <source src={msg.proxy_media || msg.mediaUrl} type="audio/mpeg" />
+                          Seu navegador não suporta a reprodução de áudio.
+                        </audio>
+                      )}
+                      {msg.type === 'document' && (msg.proxy_media || msg.mediaUrl) && (
+                        <a
+                          href={msg.proxy_media || msg.mediaUrl}
+                          download
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Documento
+                        </a>
+                      )}
+					  {['sticker', 'image', 'video', 'audio', 'document'].includes(msg.type) &&
+                        !(msg.proxy_media || msg.mediaUrl) && (
+                          <span>Carregando mídia...</span>
+                        )}
+                    </li>
+                  ))
+                ) : (
+                  <p>Nenhuma mensagem encontrada nesta conversa.</p>
+                )}
+              </ul>
             </div>
             <form className="send-message-form" onSubmit={sendMessage}>
-              <textarea
-                placeholder="Digite sua mensagem"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-              />
-              <button type="submit">Enviar</button>
+              <div className="message-input-container">
+                <textarea
+                  placeholder="Digite sua mensagem"
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  className="message-textarea"
+                />
+                <div className="media-upload-container">
+                  <input 
+                    type="file" 
+                    ref={fileInputRef}
+                    onChange={handleMediaUpload}
+                    accept="image/*,video/*,audio/*,application/pdf,application/doc,application/docx"
+                    className="file-input"
+                  />
+                  {mediaFile && (
+                    <div className="media-preview">
+                      <span>{mediaFile.name}</span>
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          setMediaFile(null);
+                          setMediaType('');
+                          if (fileInputRef.current) {
+                            fileInputRef.current.value = '';
+                          }
+                        }}
+                      >
+                        ✖
+                      </button>
+                    </div>
+                  )}
+                  <button type="submit" className="send-button">
+                    {mediaFile ? `Enviar ${mediaType}` : 'Enviar'}
+                  </button>
+                </div>
+              </div>
             </form>
           </>
         ) : (
@@ -307,3 +476,4 @@ const clearSelectedConversation = () => {
 };
 
 export default InteractiveComponent;
+
