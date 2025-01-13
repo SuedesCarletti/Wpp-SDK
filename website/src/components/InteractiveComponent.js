@@ -27,11 +27,21 @@ const fetchMessagesWithMedia = async (messages) => {
     messages.map(async (msg) => {
       try {
         if (['sticker', 'image', 'video', 'audio', 'document'].includes(msg.type)) {
-          const match = msg.message && msg.message.match(/'id': '(\w+)'/);
-          if (match) {
-            const mediaId = match[1];
-            const mediaUrl = await fetchMediaUrl(mediaId);
-            return { ...msg, mediaUrl };
+          if (msg.media_id) {
+            const mediaUrl = await fetchMediaUrl(msg.media_id);
+            return { 
+              ...msg, 
+              mediaUrl,
+              caption: msg.media?.caption || msg.caption || msg.message // Inclui msg.message como fallback
+            };
+          }
+          if (msg.media?.id) {
+            const mediaUrl = await fetchMediaUrl(msg.media.id);
+            return { 
+              ...msg, 
+              mediaUrl,
+              caption: msg.media.caption || msg.caption || msg.message // Inclui msg.message como fallback
+            };
           }
         }
       } catch (error) {
@@ -106,18 +116,33 @@ const InteractiveComponent = () => {
     }
   }, []);
 
+  const handleSelectConversation = useCallback(async (conversation) => {
+    setSelectedConversation(conversation);
+    setMessages(conversation.messages || []);
+    localStorage.setItem('selectedConversation', JSON.stringify(conversation));
+    
+    try {
+      const unreadMessages = conversation.messages.filter(msg => msg.from_number !== 'meu_numero');
+      await Promise.all(unreadMessages.map(msg => 
+        axios.post(`${API_URL}/mark_messages_read`, { message_id: msg.wamid })
+      ));
+    } catch (error) {
+      console.error('Error marking messages as read:', error);
+    }
+  }, []);
+
   // Tratamento de upload de mídia
   const handleMediaUpload = (event) => {
     const file = event.target.files[0];
     if (file) {
       const fileType = file.type.split('/')[0];
       const allowedTypes = ['image', 'video', 'audio', 'application'];
-      
+
       if (allowedTypes.includes(fileType)) {
         setMediaFile(file);
         setMediaType(
-          fileType === 'application' 
-            ? 'document' 
+          fileType === 'application'
+            ? 'document'
             : fileType
         );
       } else {
@@ -126,140 +151,166 @@ const InteractiveComponent = () => {
     }
   };
 
-const sendMessage = async (e) => {
-  e.preventDefault();
+  const sendMessage = async (e) => {
+    e.preventDefault();
 
-  if (!selectedConversation) {
-    alert('Selecione uma conversa primeiro');
-    return;
-  }
+    if (!selectedConversation) {
+      alert('Selecione uma conversa primeiro');
+      return;
+    }
 
-  const to = selectedConversation.fromNumber || selectedConversation.wamid;
-  if (!to) {
-    alert('Número de contato inválido ou ausente.');
-    return;
-  }
+    const to = selectedConversation.fromNumber || selectedConversation.wamid;
+    if (!to) {
+      alert('Número de contato inválido ou ausente.');
+      return;
+    }
 
-  // Verifica se há mensagem de texto ou arquivo de mídia
-  if (!message.trim() && !mediaFile) {
-    alert('Digite uma mensagem ou selecione um arquivo para enviar.');
-    return;
-  }
+    if (!message.trim() && !mediaFile) {
+      alert('Digite uma mensagem ou selecione um arquivo para enviar.');
+      return;
+    }
 
-  try {
-    // Gera um ID temporário para a mensagem
-    const tempWamid = `temp_${Date.now()}`;
+    try {
+      const tempWamid = `temp_${Date.now()}`;
+      let payload;
+      let config = {
+        headers: { 'Content-Type': 'application/json' }
+      };
 
-    // Prepara os dados para envio
-    let payload;
-    let config = {
-      headers: { 'Content-Type': 'application/json' }
-    };
+      if (mediaFile) {
+        const formData = new FormData();
+        formData.append('to', to);
+        formData.append('media', mediaFile);
+        formData.append('type', mediaType);
 
-    // Lógica para upload de mídia
-    if (mediaFile) {
-      const formData = new FormData();
-      formData.append('to', to);
-      formData.append('media', mediaFile);
-      formData.append('type', mediaType);
+        // Garante que o caption seja enviado corretamente
+        if (message.trim()) {
+          formData.append('caption', message.trim());
+          formData.append('text', message.trim()); // Mantém compatibilidade
+        }
 
-      // Adiciona mensagem de texto ao FormData, se existir
-      if (message.trim()) {
-        formData.append('message', message.trim());
+        config = {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        };
+        payload = formData;
+      } else {
+        payload = {
+          to: to,
+          text: message.trim(),
+          type: 'text'
+        };
       }
 
-      config = {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      };
+      const response = await axios.post(`${API_URL}/send`, payload, config);
 
-      payload = formData;
-    } else {
-      // Payload para mensagem de texto
-      payload = {
-        to: to,
-        message: message.trim(),
-        type: 'text'
-      };
+      // Atualiza as conversas com a nova mensagem
+	const newMessage = {
+	  from_number: 'meu_numero',
+	  wamid: tempWamid,
+	  type: mediaFile ? mediaType : 'text',
+	  timestamp: new Date().toISOString(),
+	  mediaUrl: mediaFile ? URL.createObjectURL(mediaFile) : undefined
+	};
+
+	// Só adiciona campos relacionados ao texto se houver mensagem
+	if (message.trim()) {
+	  newMessage.message = message.trim();
+	  newMessage.caption = message.trim();
+	  if (mediaFile) {
+	    newMessage.media = {
+	      caption: message.trim()
+	    };
+	  }
+	}	
+
+	// Atualização das conversas
+	setConversations(prevConversations => {
+	  const updatedConversations = prevConversations.map(conv => {
+	    if (conv.wamid === selectedConversation.wamid ||
+	        conv.fromNumber === selectedConversation.fromNumber) {
+	      const updatedMessages = [...conv.messages];
+	      // Remove qualquer mensagem temporária anterior com o mesmo wamid se existir
+	      const existingIndex = updatedMessages.findIndex(m => m.wamid === tempWamid);
+	      if (existingIndex !== -1) {
+	        updatedMessages.splice(existingIndex, 1);
+	      }
+	      updatedMessages.push(newMessage);
+	      
+	      return {
+	        ...conv,
+	        messages: updatedMessages,
+	        lastMessage: message.trim() || (mediaFile ? '' : message),
+	        timestamp: new Date().toISOString()
+	      };
+	    }
+	    return conv;
+	  });
+
+	  return updatedConversations.sort((a, b) =>
+	    new Date(b.timestamp) - new Date(a.timestamp)
+	  );
+	});
+
+	// Atualização das mensagens da conversa atual
+	setMessages(prevMessages => {
+	  const updatedMessages = [...prevMessages];
+	  // Remove qualquer mensagem temporária anterior com o mesmo wamid se existir
+	  const existingIndex = updatedMessages.findIndex(m => m.wamid === tempWamid);
+	  if (existingIndex !== -1) {
+	    updatedMessages.splice(existingIndex, 1);
+	  }
+	  updatedMessages.push(newMessage);
+	  return updatedMessages;
+	});
+
+      // Limpa os campos após envio
+      setMessage('');
+      setMediaFile(null);
+      setMediaType('');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+
+      // Atualiza com o ID real da mensagem quando disponível
+      if (response.data?.messages?.[0]?.id) {
+        const actualWamid = response.data.messages[0].id;
+        
+        // Atualiza o ID da mensagem mantendo o caption
+        setConversations(prevConversations =>
+          prevConversations.map(conv => {
+            if (conv.wamid === selectedConversation.wamid ||
+                conv.fromNumber === selectedConversation.fromNumber) {
+              return {
+                ...conv,
+                messages: conv.messages.map(msg =>
+                  msg.wamid === tempWamid ? {
+                    ...msg,
+                    wamid: actualWamid,
+                    media_id: response.data.messages[0].media_id // Adiciona media_id se disponível
+                  } : msg
+                )
+              };
+            }
+            return conv;
+          })
+        );
+
+        setMessages(prevMessages =>
+          prevMessages.map(msg =>
+            msg.wamid === tempWamid ? {
+              ...msg,
+              wamid: actualWamid,
+              media_id: response.data.messages[0].media_id // Adiciona media_id se disponível
+            } : msg
+          )
+        );
+      }
+
+    } catch (error) {
+      console.error('Erro ao enviar mensagem:', error);
+      alert('Falha ao enviar mensagem. Por favor, tente novamente.');
     }
-
-    // Enviar a mensagem
-    const response = await axios.post(
-      `${API_URL}/send`,
-      payload,
-      config
-    );
-
-    // Atualiza as conversas imediatamente
-    setConversations((prevConversations) => {
-      const updatedConversations = prevConversations.map(conv => {
-        if (conv.wamid === selectedConversation.wamid ||
-            conv.fromNumber === selectedConversation.fromNumber) {
-          const newMessage = {
-            from_number: 'meu_numero',
-            message: message.trim() || (mediaFile ? mediaFile.name : ''),
-            wamid: tempWamid,
-            type: mediaFile ? mediaType : 'text',
-            timestamp: new Date().toISOString()
-          };
-
-          return {
-            ...conv,
-            messages: [...conv.messages, newMessage],
-            lastMessage: message.trim() || `Enviou um ${mediaType}`,
-            timestamp: new Date().toISOString()
-          };
-        }
-        return conv;
-      });
-
-      return updatedConversations.sort((a, b) =>
-        new Date(b.timestamp) - new Date(a.timestamp)
-      );
-    });
-
-    // Limpa os estados de mensagem e mídia
-    setMessage('');
-    setMediaFile(null);
-    setMediaType('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-
-    // Atualiza com o ID real da mensagem do servidor, se disponível
-    if (response.data && response.data.messages && response.data.messages[0].id) {
-      const actualWamid = response.data.messages[0].id;
-
-      setConversations((prevConversations) =>
-        prevConversations.map(conv => {
-          if (conv.wamid === selectedConversation.wamid ||
-              conv.fromNumber === selectedConversation.fromNumber) {
-            return {
-              ...conv,
-              messages: conv.messages.map(msg =>
-                msg.wamid === tempWamid
-                  ? {...msg, wamid: actualWamid}
-                  : msg
-              )
-            };
-          }
-          return conv;
-        })
-      );
-
-      setMessages((prevMessages) =>
-        prevMessages.map(msg =>
-          msg.wamid === tempWamid
-            ? {...msg, wamid: actualWamid}
-            : msg
-        )
-      );
-    }
-
-  } catch (error) {
-    console.error('Erro ao enviar mensagem:', error);
-    alert('Falha ao enviar mensagem. Por favor, tente novamente.');
-  }
-};
+  };
 
   // Configurar WebSocket
   useEffect(() => {
@@ -364,13 +415,6 @@ const sendMessage = async (e) => {
     };
   }, [fetchConversations]);
 
-  // Selecionar conversa
-  const handleSelectConversation = useCallback((conversation) => {
-    setSelectedConversation(conversation);
-    setMessages(conversation.messages || []);
-    localStorage.setItem('selectedConversation', JSON.stringify(conversation));
-  }, []);
-
   // Renderização do componente
   return (
     <div className="interactive-page">
@@ -387,93 +431,98 @@ const sendMessage = async (e) => {
                 {Array.isArray(messages) && messages.length > 0 ? (
                   messages.map((msg, index) => (
                     <li key={`${msg.wamid || msg.from_number}-${index}`}>
-                      <strong>{msg.contact_name || msg.from_number}</strong>: {msg.message}
-                      {msg.type === 'sticker' && (msg.proxy_media || msg.mediaUrl) && (
+                      <strong>{msg.contact_name || msg.from_number}</strong>: {msg.type === 'text' ? msg.message : ''}
+                      {msg.type === 'sticker' && msg.mediaUrl && (
                         <img
-                          src={msg.proxy_media || msg.mediaUrl}
+                          src={msg.mediaUrl}
                           alt="Sticker"
                           className="sticker"
                         />
                       )}
-                      {msg.type === 'image' && (msg.proxy_media || msg.mediaUrl) && (
-                        <img
-                          src={msg.proxy_media || msg.mediaUrl}
-                          alt="Imagem"
-                          className="image"
-                        />
+                      {msg.type === 'image' && msg.mediaUrl && (
+                        <div className="media-container">
+                          <img
+                            src={msg.mediaUrl}
+                            alt="Imagem"
+                            className="image"
+                          />
+                          {msg.caption && <div className="media-caption">{msg.caption}</div>}
+                        </div>
                       )}
-                      {msg.type === 'video' && (msg.proxy_media || msg.mediaUrl) && (
-                        <video controls>
-                          <source src={msg.proxy_media || msg.mediaUrl} type="video/mp4" />
-                          Seu navegador não suporta a reprodução de vídeo.
-                        </video>
+                      {msg.type === 'video' && msg.mediaUrl && (
+                        <div className="media-container">
+                          <video controls>
+                            <source src={msg.mediaUrl} type="video/mp4" />
+                            Seu navegador não suporta a reprodução de vídeo.
+                          </video>
+                          {msg.caption && <div className="media-caption">{msg.caption}</div>}
+                        </div>
                       )}
-                      {msg.type === 'audio' && (msg.proxy_media || msg.mediaUrl) && (
+                      {msg.type === 'audio' && msg.mediaUrl && (
                         <audio controls>
-                          <source src={msg.proxy_media || msg.mediaUrl} type="audio/mpeg" />
+                          <source src={msg.mediaUrl} type="audio/mpeg" />
                           Seu navegador não suporta a reprodução de áudio.
                         </audio>
                       )}
-                      {msg.type === 'document' && (msg.proxy_media || msg.mediaUrl) && (
-                        <a
-                          href={msg.proxy_media || msg.mediaUrl}
-                          download
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          Documento
-                        </a>
+                      {msg.type === 'document' && msg.mediaUrl && (
+                        <div className="media-container">
+                          <a
+                            href={msg.mediaUrl}
+                            download
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Documento
+                          </a>
+                          {msg.caption && <div className="media-caption">{msg.caption}</div>}
+                        </div>
                       )}
-					  {['sticker', 'image', 'video', 'audio', 'document'].includes(msg.type) &&
-                        !(msg.proxy_media || msg.mediaUrl) && (
-                          <span>Carregando mídia...</span>
-                        )}
                     </li>
                   ))
                 ) : (
                   <p>Nenhuma mensagem encontrada nesta conversa.</p>
                 )}
               </ul>
-            </div>    
-	<form className="send-message-form" onSubmit={sendMessage}>
-      <div className="message-input-container">
-        <textarea
-          placeholder="Digite sua mensagem"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          className="message-textarea"
-        />
-        <div className="media-upload-container">
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleMediaUpload}
-            accept="image/*,video/*,audio/*,application/pdf,application/doc,application/docx"
-            className="file-input"
-          />
-          {mediaFile && (
-            <div className="media-preview">
-              <span>{mediaFile.name}</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setMediaFile(null);
-                  setMediaType('');
-                  if (fileInputRef.current) {
-                    fileInputRef.current.value = '';
-                  }
-                }}
-              >
-                ✖
-              </button>
             </div>
-          )}
-          <button type="submit" className="send-button">
-            {mediaFile ? `Enviar ${mediaType}` : 'Enviar'}
-          </button>
-        </div>
-      </div>
-    </form>
+            <form className="send-message-form" onSubmit={sendMessage}>
+              <div className="message-input-container">
+                <textarea
+                  placeholder={mediaFile ? "Digite uma legenda para a mídia..." : "Digite sua mensagem"}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  className="message-textarea"
+                />
+                <div className="media-upload-container">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleMediaUpload}
+                    accept="image/*,video/*,audio/*,application/pdf,application/doc,application/docx"
+                    className="file-input"
+                  />
+                  {mediaFile && (
+                    <div className="media-preview">
+                      <span>{mediaFile.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMediaFile(null);
+                          setMediaType('');
+                          if (fileInputRef.current) {
+                            fileInputRef.current.value = '';
+                          }
+                        }}
+                      >
+                        ✖
+                      </button>
+                    </div>
+                  )}
+                  <button type="submit" className="send-button">
+                    {mediaFile ? `Enviar ${mediaType}` : 'Enviar'}
+                  </button>
+                </div>
+              </div>
+            </form>
           </>
         ) : (
           <p>Selecione uma conversa para começar.</p>
@@ -484,4 +533,3 @@ const sendMessage = async (e) => {
 };
 
 export default InteractiveComponent;
-
