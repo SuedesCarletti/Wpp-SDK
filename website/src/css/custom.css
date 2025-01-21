@@ -3,6 +3,7 @@
  * bundles Infima by default. Infima is a CSS framework designed to
  * work well for content-centric websites.
  */
+
 /* You can override the default Infima variables here. */
 :root {
   --ifm-color-primary: #25d366;
@@ -19,6 +20,14 @@
   --ifm-menu-color: --ifm-color-black;
   --ifm-toc-link-color: --ifm-color-black;
   --ifm-font-weight-semibold: 600;
+  
+  /* Message theme colors - Light mode */
+  --sent-bg: #dcf8c6;
+  --received-bg: #ffffff;
+  --sent-text: #000000;
+  --received-text: #000000;
+  --timestamp-color: #667781;
+  --reaction-bg: rgba(255, 255, 255, 0.9);
 }
 
 /* For readability concerns, you should choose a lighter palette in dark mode. */
@@ -30,6 +39,14 @@
   --ifm-color-primary-lighter: #32d8b4;
   --ifm-color-primary-lightest: #4fddbf;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  
+  /* Message theme colors - Dark mode */
+  --sent-bg: #005c4b;
+  --received-bg: #202c33;
+  --sent-text: #e9edef;
+  --received-text: #e9edef;
+  --timestamp-color: #8696a0;
+  --reaction-bg: rgba(32, 44, 51, 0.9);
 }
 
 [data-theme='light'] {
@@ -76,20 +93,131 @@
   overflow-y: auto;
 }
 
-.messages img {
-  max-width: 100px; /* Limita a largura do sticker */
-  max-height: 100px; /* Limita a altura do sticker */
-  border-radius: 5px; /* Bordas arredondadas para os stickers */
-  margin: 5px 0; /* Espaço entre os stickers e outras mensagens */
+.messages-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  overflow-y: auto;
 }
 
+/* Message Bubbles Base Styles */
+.message-bubble-container {
+  margin: 8px 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.message-bubble {
+  max-width: 70%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  position: relative;
+  word-wrap: break-word;
+}
+
+/* Message alignment */
+.sent {
+  align-items: flex-end;
+}
+
+.received {
+  align-items: flex-start;
+}
+
+/* Message bubble styles */
+.sent-bubble {
+  background-color: var(--sent-bg);
+  color: var(--sent-text);
+  margin-right: auto;
+  border-radius: 12px 12px 12px 2px;
+}
+
+.received-bubble {
+  background-color: var(--received-bg);
+  color: var(--received-text);
+  margin-left: auto;
+  border-radius: 12px 12px 2px 12px;
+}
+
+/* Message content wrapper */
+.message-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.text {
+  margin-right: 48px; /* Space for timestamp */
+  word-wrap: break-word;
+}
+
+/* Media content styles */
+.media-wrapper {
+  max-width: 300px;
+  margin-bottom: 4px;
+}
+
+.image, .video {
+  max-width: 100%;
+  border-radius: 8px;
+  margin-bottom: 4px;
+}
+
+.caption {
+  margin-top: 4px;
+  font-size: 0.9em;
+}
+
+/* Timestamp styles */
+.timestamp {
+  font-size: 11px;
+  color: var(--timestamp-color);
+  margin-top: 2px;
+  margin-left: 4px;
+  float: right;
+}
+
+/* Reactions styles */
+.reactions-container {
+  position: absolute;
+  bottom: -12px;
+  background-color: var(--reaction-bg);
+  padding: 4px 8px;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  z-index: 1;
+  min-width: 24px;
+  min-height: 24px;
+  justify-content: center;
+}
+
+/* Posicionamento das reações baseado no tipo de mensagem */
+.sent .reactions-container {
+  right: 8px; /* Para mensagens enviadas */
+}
+
+.received .reactions-container {
+  left: 8px; /* Para mensagens recebidas */
+}
+
+.reaction-emoji {
+  font-size: 13px;
+  line-height: 16px;
+}
+
+/* Form styles */
 .send-message-form {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-top: auto; /* Move the form to the bottom */
+  margin-top: auto;
   width: 100%;
-  background-color: #fff; /* Ensure the form is clearly visible */
+  background-color: #fff;
   padding: 10px;
 }
 
@@ -101,7 +229,33 @@
   border: 1px solid #ccc;
 }
 
-/* Removendo o footer explicitamente */
+/* Remove footer explicitly */
 footer {
+  display: none;
+}
+
+/* Image styles */
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+img.message-image {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+.message-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 12px; /* Espaço para as reações */
+}
+
+.message-bubble-container:not(:has(.text, .media-wrapper, .document-wrapper)) {
   display: none;
 }
